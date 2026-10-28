@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>读书助手</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1c1915;
+      --muted: #5c564c;
+      --paper: #f4efe6;
+      --card: #fffdf8;
+      --line: #e2d9cc;
+      --mark: #8c3b2a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif;
+      color: var(--ink);
+      background: var(--paper);
+    }
+    header {
+      padding: 28px 32px 8px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+    }
+    header p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-family: "Segoe UI", sans-serif;
+      font-size: 14px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: 20px;
+      padding: 16px 32px 40px;
+    }
+    form {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    input {
+      flex: 1;
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font: 16px/1.4 "Segoe UI", sans-serif;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 0 18px;
+      background: var(--mark);
+      color: #fffaf6;
+      font: 15px/1 "Segoe UI", sans-serif;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    #answer, #sources {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      min-height: 420px;
+      padding: 18px 20px;
+    }
+    #answer {
+      white-space: pre-wrap;
+      font-family: "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      font-family: "Segoe UI", sans-serif;
+    }
+    .hit {
+      border-top: 1px solid var(--line);
+      padding: 10px 0;
+    }
+    .hit button {
+      background: transparent;
+      color: var(--ink);
+      padding: 0;
+      text-align: left;
+      font-weight: 650;
+    }
+    .hit p {
+      display: none;
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-family: "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+    .hit.open p { display: block; }
+    .empty { color: var(--muted); font-family: "Segoe UI", sans-serif; }
+    @media (max-width: 800px) {
+      main { grid-template-columns: 1fr; padding: 12px; }
+      header { padding: 20px 12px 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>读书助手</h1>
+    <p>现在读的是第一本书。回答写在左边，用到的原文页码在右边。点一条可以展开正文。</p>
+  </header>
+  <main>
+    <section>
+      <form id="ask-form">
+        <input id="problem" name="problem" placeholder="就这本书提一个问题" autocomplete="off" />
+        <button id="go" type="submit">提问</button>
+      </form>
+      <div id="answer" class="empty">回答会出现在这里。</div>
+    </section>
+    <aside id="sources">
+      <h2>原文</h2>
+      <p class="empty">检索到的段落会列在这里。</p>
+    </aside>
+  </main>
+  <script>
+    const form = document.querySelector("#ask-form");
+    const input = document.querySelector("#problem");
+    const answer = document.querySelector("#answer");
+    const sources = document.querySelector("#sources");
+    const button = document.querySelector("#go");
+    let current = null;
+
+    function renderHits(hits) {
+      sources.innerHTML = "<h2>原文</h2>";
+      if (!hits.length) {
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = "没有命中段落。";
+        sources.appendChild(p);
+        return;
+      }
+      hits.forEach((hit) => {
+        const box = document.createElement("div");
+        box.className = "hit";
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.textContent = (hit.id || "片段") + " · 第 " + hit.page + " 页";
+        const body = document.createElement("p");
+        body.textContent = hit.text || "";
+        toggle.addEventListener("click", () => box.classList.toggle("open"));
+        box.append(toggle, body);
+        sources.appendChild(box);
+      });
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const problem = input.value.trim();
+      if (!problem || button.disabled) return;
+      if (current) current.close();
+      answer.textContent = "";
+      answer.classList.remove("empty");
+      sources.innerHTML = "<h2>原文</h2><p class='empty'>正在查找原文…</p>";
+      button.disabled = true;
+      current = new EventSource("/ask?problem=" + encodeURIComponent(problem));
+      current.addEventListener("sources", (message) => {
+        renderHits(JSON.parse(message.data));
+      });
+      current.addEventListener("token", (message) => {
+        // FastAPI 对字符串 data 会 JSON 编码，先去掉一层引号
+        let piece = message.data;
+        try {
+          piece = JSON.parse(message.data);
+        } catch (_) {}
+        answer.textContent += piece;
+      });
+      function finish() {
+        button.disabled = false;
+        if (current) {
+          current.close();
+          current = null;
+        }
+      }
+      current.addEventListener("done", finish);
+      current.addEventListener("error", finish);
+    });
+  </script>
+</body>
+</html>
