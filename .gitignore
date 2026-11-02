@@ -9,4 +9,7 @@ __pycache__/
 .mypy_cache/
 data/*.pdf
 chroma_db/
+eval/chroma_db/
+临时.py
+*.log
 

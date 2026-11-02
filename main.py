@@ -13,7 +13,7 @@ from fastapi.sse import ServerSentEvent
 from pipeline import begin_ask
 
 _ROOT = Path(__file__).resolve().parent
-load_dotenv(_ROOT / ".env")
+load_dotenv(_ROOT / ".env", override=True)
 logger = logging.getLogger(__name__)
 app = FastAPI()
 

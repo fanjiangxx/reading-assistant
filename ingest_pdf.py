@@ -1,4 +1,4 @@
-"""把 PDF 切成带页码的块。import 本模块不会打开文件。"""
+"""把 PDF / TXT / MD 切成统一合同的块。import 本模块不会打开文件。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,10 @@ from typing import TypedDict
 import pymupdf
 
 _ROOT = Path(__file__).resolve().parent
-_DEFAULT_PDF = _ROOT / "data" / "2025年美的财务报告.pdf"
+_DATA_DIR = _ROOT / "data"
+_DEFAULT_PDF = _DATA_DIR / "2025年美的财务报告.pdf"
+_TEXT_SUFFIXES = {".txt", ".md", ".markdown"}
+_SUPPORTED_SUFFIXES = {".pdf"} | _TEXT_SUFFIXES
 
 
 class Chunk(TypedDict):
@@ -68,3 +71,55 @@ def ingest_pdf(pdf_path: str | Path | None = None, doc_id: str | None = None) ->
     finally:
         doc.close()
     return result
+
+
+def ingest_text(path: str | Path, doc_id: str | None = None) -> list[Chunk]:
+    """读一份 TXT/MD，按字符切块。纯文本没有 PDF 页概念，page 固定为 1。"""
+    file_path = Path(path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"文本不存在: {file_path}")
+    suffix = file_path.suffix.lower()
+    if suffix not in _TEXT_SUFFIXES:
+        raise ValueError(f"需要 .txt/.md 文件，收到: {suffix or '(无后缀)'} ({file_path})")
+    if doc_id is None:
+        doc_id = file_path.name
+    # utf-8-sig：兼容带 BOM 的 Windows 记事本文件
+    text = file_path.read_text(encoding="utf-8-sig")
+    pieces = split_text(text, size=600, overlap=80)
+    result: list[Chunk] = []
+    for n, piece in enumerate(pieces, start=1):
+        result.append(
+            {
+                "id": f"{doc_id}_{n:03d}",
+                "doc_id": doc_id,
+                "page": 1,
+                "text": piece,
+            }
+        )
+    return result
+
+
+def ingest_path(path: str | Path, doc_id: str | None = None) -> list[Chunk]:
+    """按后缀分流：pdf → ingest_pdf；txt/md → ingest_text。"""
+    file_path = Path(path)
+    suffix = file_path.suffix.lower()
+    if suffix == ".pdf":
+        return ingest_pdf(file_path, doc_id=doc_id)
+    if suffix in _TEXT_SUFFIXES:
+        return ingest_text(file_path, doc_id=doc_id)
+    raise ValueError(
+        f"暂不支持的格式 {suffix or '(无后缀)'}，仅支持: {', '.join(sorted(_SUPPORTED_SUFFIXES))}"
+    )
+
+
+def list_data_files(data_dir: str | Path | None = None) -> list[Path]:
+    """列出 data/ 下可入库的文件（pdf/txt/md），按文件名排序。"""
+    root = Path(data_dir) if data_dir else _DATA_DIR
+    if not root.is_dir():
+        return []
+    files = [
+        p
+        for p in root.iterdir()
+        if p.is_file() and p.suffix.lower() in _SUPPORTED_SUFFIXES
+    ]
+    return sorted(files, key=lambda p: p.name.lower())

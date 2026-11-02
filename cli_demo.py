@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 from pipeline import ask
 
-load_dotenv(Path(__file__).resolve().parent  / ".env")
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 logger = logging.getLogger(__name__)
 
 

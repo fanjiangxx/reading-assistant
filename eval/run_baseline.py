@@ -38,7 +38,7 @@ from dotenv import load_dotenv
 
 from pipeline import run_once
 
-load_dotenv(_ROOT / ".env")
+load_dotenv(_ROOT / ".env", override=True)
 logger = logging.getLogger(__name__)
 
 _SOFT_PREFIXES = ("近", "约", "接近", "大约")
